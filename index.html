@@ -73,12 +73,14 @@
     </div>
 
     <div class="group">
-      <label>Curvatura / locura de los nombres: <span id="curveVal">35</span></label>
-      <input id="curve" type="range" min="0" max="100" value="35">
-      <label>Relleno (tamaño de los nombres): <span id="densVal">80</span></label>
-      <input id="dens" type="range" min="0" max="100" value="80">
-      <label>Variación de tamaño por letra: <span id="jitVal">25</span></label>
-      <input id="jit" type="range" min="0" max="100" value="25">
+      <label>Curvatura / locura de los nombres: <span id="curveVal">50</span></label>
+      <input id="curve" type="range" min="0" max="100" value="50">
+      <label>Relleno del número: <span id="densVal">50</span></label>
+      <input id="dens" type="range" min="0" max="100" value="50">
+      <label>Variación de tamaño entre nombres: <span id="nameVarVal">50</span></label>
+      <input id="nameVar" type="range" min="0" max="100" value="50">
+      <label>Variación de tamaño por letra: <span id="jitVal">50</span></label>
+      <input id="jit" type="range" min="0" max="100" value="50">
       <label style="margin-top:12px;display:flex;align-items:center;gap:7px;color:var(--ink)">
         <input id="repeat" type="checkbox" checked> Repetir nombres para rellenar
       </label>
@@ -87,7 +89,7 @@
 
     <div class="group">
       <div class="row">
-        <button class="btn-accent" id="regen">🎲 Regenerar</button>
+        <button class="btn-accent" id="regen">🎲 Aleatorio</button>
         <button class="btn-blue" id="save">♥ Guardar</button>
       </div>
       <button class="btn-dark" id="randFont" style="width:100%;margin-top:8px">🔤 Probar fuentes al azar</button>
@@ -283,12 +285,12 @@ function layout(name, base, x0, y0, a0, A, jitter, rnd, family){
 
 // ============================ Empaquetado ===================================
 function pack(opts){
-  const { seed, family, curve, dens, jitter, repeat } = opts;
+  const { seed, family, curve, dens, jitter, repeat, sizeVar } = opts;
   const rnd = mulberry32(seed>>>0);
   occReset(); glyphCache = new Map();
   setMeasureFont(family);
 
-  const t0 = Date.now(), DEADLINE = t0 + 6000;   // presupuesto de tiempo (rellena lo máximo sin colgarse)
+  const t0 = Date.now(), DEADLINE = t0 + 4500;   // presupuesto de tiempo (rellena lo máximo sin colgarse)
   const c = curve/100, d = dens/100, jit = 0.05 + 0.45*(jitter/100);
   const straightProb = 1 - 0.8*c;
   const Amax = 1.0*c;
@@ -338,31 +340,50 @@ function pack(opts){
   // Nombres más largos primero (necesitan más sitio cuando el número aún está vacío).
   const order = NAMES.slice().sort((a,b)=> Array.from(b).length - Array.from(a).length);
 
+  // Variación de tamaño ENTRE nombres: 0 => todos igual; 1 => rango amplio.
+  const sv = (typeof sizeVar==='number' ? sizeVar : 50)/100;
+
   if(repeat){
-    // REPETIR: rondas equilibradas. Cada ronda intenta colocar TODOS una vez más,
-    // al mayor tamaño que quepa; el techo baja cada ronda. Así se reparte parejo
-    // y se rellena hasta la densidad objetivo (o agotar el tiempo).
-    const minSize = Math.round(12 - 9*d);              // 12..3: a más densidad, rellenos diminutos
-    let curMax = 46, progressed = true;
+    // 1) NOMBRES PRINCIPALES: rondas equilibradas en un rango [lo,hi] que marca la
+    //    VARIACIÓN (sv). Cada ronda coloca todos una vez más => reparto parejo.
+    const base = 30;
+    const hi = Math.min(96, Math.round(base*(1 + 1.5*sv)));
+    const lo = Math.max(9, Math.min(base, Math.round(base*(1 - 0.55*sv))));
+    let curMax = hi, progressed = true;
     while(progressed && Date.now()<DEADLINE){
       progressed=false; refreshEmpty();
       for(const name of order){
-        for(let size=curMax; size>=minSize; size=Math.max(size-2,Math.floor(size*0.82))){
-          if(tryPlace(name, size, size>30?110:260)){ progressed=true; break; }
+        for(let size=curMax; size>=lo; size=Math.max(size-2,Math.floor(size*0.85))){
+          if(tryPlace(name, size, size>30?110:220)){ progressed=true; break; }
         }
       }
-      curMax = Math.max(minSize, Math.floor(curMax*0.82));
+      curMax = (curMax<=lo) ? lo : Math.max(lo, Math.floor(curMax*0.84));
+    }
+    // 2) RELLENO DE HUECOS según densidad: repeticiones pequeñas hasta gapFloor.
+    //    (mezclar tamaños grandes + pequeños es lo que de verdad tapa los huecos)
+    //    Nombres CORTOS primero: caben en huecos más pequeños.
+    const gapFloor = Math.max(2, Math.round(12 - 10*d));      // 12..2: a más relleno, fillers diminutos
+    const shortFirst = order.slice().sort((a,b)=> Array.from(a).length - Array.from(b).length);
+    for(let size=Math.min(lo-1, 18); size>=gapFloor; size--){
+      if(Date.now()>DEADLINE) break;
+      let prog=true, sweeps=0;
+      while(prog && sweeps<3 && Date.now()<DEADLINE){
+        prog=false; sweeps++; refreshEmpty();
+        for(const name of shortFirst){ if(tryPlace(name, size, 200)) prog=true; }
+      }
     }
   } else {
-    // SIN REPETIR: cada nombre UNA vez, lo más grande que quepa (densidad = tamaño objetivo).
-    const targetMax = Math.round(34 + 52*d);           // 34..86
+    // SIN REPETIR: cada nombre UNA vez, al mayor tamaño que quepa dentro del rango.
+    const base = Math.round(28 + 30*d);                       // 28..58 (relleno = tamaño)
+    const hi   = Math.min(110, Math.round(base*(1 + 1.3*sv)));
+    const lo   = Math.max(6, Math.min(base, Math.round(base*(1 - 0.55*sv))));
     for(const name of order){
       refreshEmpty();
       let done=false;
-      for(let size=targetMax; size>=5 && !done; size=Math.max(size-2, Math.floor(size*0.85))){
+      for(let size=hi; size>=lo && !done; size=Math.max(size-2, Math.floor(size*0.88))){
         if(tryPlace(name, size, size>40?350:700)) done=true;
       }
-      if(!done){ refreshEmpty(); for(let size=5; size>=3 && !done; size--){ if(tryPlace(name,size,2500)) done=true; } }
+      if(!done){ refreshEmpty(); for(let size=lo-1; size>=3 && !done; size--){ if(tryPlace(name,size,2500)) done=true; } }
     }
   }
 
@@ -415,7 +436,7 @@ async function regenerate(seed){
   lastSeed = (seed!==undefined) ? seed : (Math.floor(Math.random()*1e9));
   const opts = { seed:lastSeed, family:currentFont,
                  curve:+$("curve").value, dens:+$("dens").value, jitter:+$("jit").value,
-                 repeat:$("repeat").checked };
+                 sizeVar:+$("nameVar").value, repeat:$("repeat").checked };
   const res = pack(opts);
   lastPlaced = res;
   showSVG(res, currentFont);
@@ -425,6 +446,21 @@ async function regenerate(seed){
                              + (res.missing ? " · ⚠️ faltan " + res.missing : "");
   $("statSeed").textContent = "semilla " + lastSeed + " · " + currentFont;
   busy(false);
+}
+
+// "Aleatorio": randomiza sliders + fuentes + flag (NO toca el número ni la lista de nombres)
+async function randomizeAll(){
+  const ri = (a,b)=> a + Math.floor(Math.random()*(b-a+1));
+  $("curve").value   = ri(0,100);  $("curveVal").textContent   = $("curve").value;
+  $("dens").value    = ri(40,100); $("densVal").textContent    = $("dens").value;
+  $("nameVar").value = ri(0,100);  $("nameVarVal").textContent = $("nameVar").value;
+  $("jit").value     = ri(0,70);   $("jitVal").textContent     = $("jit").value;
+  $("repeat").checked = Math.random() < 0.7;
+  currentFont = FONTS[(Math.random()*FONTS.length)|0];
+  currentDigitFont = DIGIT_FONTS[(Math.random()*DIGIT_FONTS.length)|0];
+  syncFontSelect(); syncDigitSelect();
+  await rebuildMask();
+  regenerate();                 // semilla nueva
 }
 
 // ----- carga de fuentes (Google Fonts a demanda) -----
@@ -464,13 +500,15 @@ function thumb(){ const c=rasterize(0.22); return c.toDataURL("image/png"); }
 function addFav(){
   const favs=loadFavs();
   favs.unshift({ id:Date.now(), seed:lastSeed, font:currentFont, digit:currentDigitFont, big:$("bigText").value,
-    curve:+$("curve").value, dens:+$("dens").value, jit:+$("jit").value, repeat:$("repeat").checked,
-    names:NAMES.slice(), thumb:thumb() });
+    curve:+$("curve").value, dens:+$("dens").value, jit:+$("jit").value, nameVar:+$("nameVar").value,
+    repeat:$("repeat").checked, names:NAMES.slice(), thumb:thumb() });
   saveFavs(favs.slice(0,40)); renderFavs();
 }
 async function applyFav(f){
   $("bigText").value=f.big; $("curve").value=f.curve; $("dens").value=f.dens; $("jit").value=f.jit;
+  $("nameVar").value = (f.nameVar!=null?f.nameVar:50);
   $("curveVal").textContent=f.curve; $("densVal").textContent=f.dens; $("jitVal").textContent=f.jit;
+  $("nameVarVal").textContent=$("nameVar").value;
   $("repeat").checked = (f.repeat!==false);
   NAMES=f.names.slice(); $("names").value=NAMES.join("\n");
   currentFont=f.font; currentDigitFont=f.digit||currentDigitFont;
@@ -519,7 +557,7 @@ function initUI(){
   dsel.onchange = async ()=>{ currentDigitFont=dsel.value; await rebuildMask(); regenerate(lastSeed); };
   $("loadDigit").onclick = async ()=>{ const v=$("customDigit").value.trim(); if(!v) return;
     currentDigitFont=v; syncDigitSelect(); await rebuildMask(); regenerate(lastSeed); };
-  $("regen").onclick = ()=> regenerate();
+  $("regen").onclick = randomizeAll;     // "Aleatorio": cambia todo menos los textos
   $("randFont").onclick = async ()=>{
     currentFont = FONTS[(Math.random()*FONTS.length)|0];
     currentDigitFont = DIGIT_FONTS[(Math.random()*DIGIT_FONTS.length)|0];
@@ -531,7 +569,7 @@ function initUI(){
 
   const live = (id, valId, rebuild)=>{ const el=$(id); el.oninput=()=>{ $(valId).textContent=el.value; };
     el.onchange=()=>{ regenerate(lastSeed); }; };
-  live("curve","curveVal"); live("dens","densVal"); live("jit","jitVal");
+  live("curve","curveVal"); live("dens","densVal"); live("jit","jitVal"); live("nameVar","nameVarVal");
   $("repeat").onchange = ()=> regenerate(lastSeed);
 
   $("bigText").onchange = async ()=>{ await rebuildMask(); regenerate(lastSeed); };
