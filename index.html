@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generador de camiseta "26" con nombres</title>
+<style>
+  :root{ --bg:#11151c; --panel:#1b2330; --ink:#e8edf4; --muted:#93a0b4; --accent:#36c08a; --accent2:#3b82f6; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
+  .app{display:grid;grid-template-columns:320px 1fr;height:100vh;}
+  .side{background:var(--panel);padding:16px;overflow:auto;border-right:1px solid #000;}
+  .main{display:flex;flex-direction:column;min-width:0;}
+  .stage{flex:1;display:flex;align-items:center;justify-content:center;padding:18px;overflow:auto;}
+  .stage svg{background:#fff;max-width:100%;max-height:100%;box-shadow:0 8px 40px rgba(0,0,0,.5);border-radius:6px;}
+  h1{font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  h1 small{font-weight:400;color:var(--muted);font-size:11px}
+  .group{margin-bottom:16px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  select,input[type=text],textarea{width:100%;background:#0f141b;color:var(--ink);border:1px solid #2a3545;
+    border-radius:7px;padding:8px;font-size:13px;font-family:inherit}
+  textarea{min-height:90px;resize:vertical;line-height:1.35}
+  input[type=range]{width:100%}
+  .row{display:flex;gap:8px}
+  .row>*{flex:1}
+  button{cursor:pointer;border:0;border-radius:8px;padding:10px 12px;font-weight:600;font-size:13px;color:#fff}
+  .btn-accent{background:var(--accent)} .btn-blue{background:var(--accent2)} .btn-dark{background:#2a3545}
+  button:active{transform:translateY(1px)}
+  .pill{display:inline-block;background:#0f141b;border:1px solid #2a3545;border-radius:20px;padding:3px 10px;font-size:11px;color:var(--muted)}
+  .hint{font-size:11px;color:var(--muted);line-height:1.4;margin-top:6px}
+  .favs{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+  .fav{position:relative;background:#fff;border-radius:6px;overflow:hidden;cursor:pointer;border:2px solid transparent}
+  .fav:hover{border-color:var(--accent)}
+  .fav img{width:100%;display:block}
+  .fav .del{position:absolute;top:2px;right:2px;background:rgba(220,40,40,.9);color:#fff;border-radius:50%;
+    width:20px;height:20px;line-height:20px;text-align:center;font-size:13px}
+  .topbar{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid #000;flex-wrap:wrap}
+  .topbar .sp{flex:1}
+  .badge{font-size:11px;color:var(--muted)}
+  .overlay{position:fixed;inset:0;background:rgba(10,12,16,.6);display:none;align-items:center;justify-content:center;font-size:15px;z-index:50}
+  .overlay.on{display:flex}
+  @media print{ .app{display:block} .side,.topbar,.overlay{display:none!important}
+    .stage{padding:0} .stage svg{box-shadow:none;max-height:none;max-width:none;width:100%} }
+  @media (max-width:760px){ .app{grid-template-columns:1fr;height:auto} .side{height:auto} }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <h1>👕 Camiseta de nombres <small>v1</small></h1>
+
+    <div class="group">
+      <label>Número / texto grande</label>
+      <input id="bigText" type="text" value="26">
+    </div>
+
+    <div class="group">
+      <label>Tipografía del número (26)</label>
+      <select id="digitSel"></select>
+      <div class="row" style="margin-top:6px">
+        <input id="customDigit" type="text" placeholder="otra de Google Fonts…">
+        <button class="btn-dark" id="loadDigit" style="flex:0 0 auto">Cargar</button>
+      </div>
+
+      <label style="margin-top:12px">Tipografía de los nombres</label>
+      <select id="fontSel"></select>
+      <div class="row" style="margin-top:6px">
+        <input id="customFont" type="text" placeholder="otra de Google Fonts…">
+        <button class="btn-dark" id="loadFont" style="flex:0 0 auto">Cargar</button>
+      </div>
+      <div class="hint">Para el número quedan mejor fuentes gruesas (Anton, Archivo Black…). Para los nombres, manuscritas.</div>
+    </div>
+
+    <div class="group">
+      <label>Curvatura / locura de los nombres: <span id="curveVal">45</span></label>
+      <input id="curve" type="range" min="0" max="100" value="45">
+      <label>Densidad de relleno: <span id="densVal">60</span></label>
+      <input id="dens" type="range" min="0" max="100" value="60">
+      <label>Variación de tamaño por letra: <span id="jitVal">40</span></label>
+      <input id="jit" type="range" min="0" max="100" value="40">
+    </div>
+
+    <div class="group">
+      <div class="row">
+        <button class="btn-accent" id="regen">🎲 Regenerar</button>
+        <button class="btn-blue" id="save">♥ Guardar</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn-dark" id="dlSvg">SVG</button>
+        <button class="btn-dark" id="dlPng">PNG</button>
+        <button class="btn-dark" id="dlPdf">PDF</button>
+      </div>
+      <div class="hint">El <b>SVG</b> es vectorial (lo mejor para la imprenta). El <b>PDF</b> usa la opción «Guardar como PDF» del navegador (también vectorial).</div>
+    </div>
+
+    <div class="group">
+      <label>Favoritas guardadas (clic para recuperar)</label>
+      <div class="favs" id="favs"></div>
+      <div class="hint" id="favsEmpty">Aún no has guardado ninguna. Cuando te guste una, pulsa ♥.</div>
+    </div>
+
+    <details class="group">
+      <summary style="cursor:pointer;color:var(--muted);font-size:12px">Editar lista de nombres</summary>
+      <textarea id="names"></textarea>
+      <button class="btn-dark" id="applyNames" style="margin-top:8px;width:100%">Aplicar nombres</button>
+    </details>
+  </aside>
+
+  <div class="main">
+    <div class="topbar">
+      <span class="pill" id="statNames">—</span>
+      <span class="pill" id="statSeed">—</span>
+      <span class="sp"></span>
+      <span class="badge">Hecho con un algoritmo de empaquetado por letra · sin servidor</span>
+    </div>
+    <div class="stage" id="stage"></div>
+  </div>
+</div>
+<div class="overlay" id="overlay">Generando…</div>
+
+<script>
+"use strict";
+// ============================ Configuración =================================
+const W = 1000, H = 1180;                 // lienzo (coordenadas SVG y colisión)
+const DEFAULT_NAMES = [
+ "Álvaro Bartolomé","Álvaro Salvador","Blanca Deusa","Carla Peiró","Claudia Membrives",
+ "David Aznar","Edu Albentosa","Fede Gomis","Hugo Pérez","Jaime Belenguer","Javier Rodríguez",
+ "Javier Monzonís","Javier Crespo","Manu Meca","Martín Peiró","Martina Casanova","Martina Colado",
+ "Martina Ripoll","Nacho García","Nacho Huici","Nacho Jorquera","Nacho Monzonís","Niko Parra",
+ "Olivia Casanova","Olivia Ripoll","Pablo Argente","Pepe Monleón","Rocío Pérez","Sergio Mengod",
+ "Sergio Reig","Sofía Durban","Telma de Otegui","Teo A. Maraguat"
+];
+// Fuentes orgánicas para los NOMBRES (se cargan a demanda)
+const FONTS = [
+ "Patrick Hand","Caveat","Gochi Hand","Shadows Into Light","Indie Flower","Kalam",
+ "Architects Daughter","Permanent Marker","Amatic SC","Gloria Hallelujah","Schoolbell",
+ "Neucha","Comic Neue","Pacifico","Dancing Script","Satisfy","Reenie Beanie","Rock Salt"
+];
+// Fuentes para el NÚMERO grande (mejor gruesas/sólidas, pero se puede elegir cualquiera)
+const DIGIT_FONTS = [
+ "Anton","Archivo Black","Bebas Neue","Passion One","Alfa Slab One","Titan One",
+ "Luckiest Guy","Bungee","Fredoka","Righteous","Paytone One","Patua One",
+ "Patrick Hand","Caveat","Permanent Marker","Amatic SC"
+];
+
+// ============================ Estado ========================================
+let NAMES = DEFAULT_NAMES.slice();
+let currentFont = "Patrick Hand";       // fuente de los nombres
+let currentDigitFont = "Anton";         // fuente del número
+let lastPlaced = null, lastSeed = 1;
+
+// ============================ Utilidades ====================================
+const $ = id => document.getElementById(id);
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+const overlay = $("overlay");
+function busy(on){ overlay.classList.toggle("on", on); }
+
+// ============================ Máscara del dígito ============================
+let maskInteg = null, maskW = W, maskH = H, insidePts = null;
+const measCanvas = document.createElement("canvas");
+const measCtx = measCanvas.getContext("2d");
+
+function buildMask(bigText){
+  const digitFontStr = `700 1000px "${currentDigitFont}", "Arial Black", Arial, sans-serif`;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; ctx.fillRect(0,0,W,H);
+  // dibujar el texto grande ajustado a una caja con margen y estiramiento vertical
+  ctx.font = digitFontStr; ctx.textBaseline = "alphabetic"; ctx.textAlign = "left";
+  const m = ctx.measureText(bigText);
+  const tw = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
+  const asc = m.actualBoundingBoxAscent, desc = m.actualBoundingBoxDescent, th = asc + desc;
+  const boxW = W*0.92, boxH = H*0.93;
+  // canvas temporal ajustado al texto
+  const t = document.createElement("canvas"); t.width = Math.ceil(tw)+4; t.height = Math.ceil(th)+4;
+  const tctx = t.getContext("2d");
+  tctx.font = digitFontStr; tctx.textBaseline="alphabetic"; tctx.textAlign="left";
+  tctx.fillStyle = "#000"; tctx.fillText(bigText, m.actualBoundingBoxLeft+2, asc+2);
+  ctx.drawImage(t, 0,0,t.width,t.height, (W-boxW)/2,(H-boxH)/2, boxW, boxH);
+
+  const data = ctx.getImageData(0,0,W,H).data;
+  // integral de "dentro" (pixel oscuro)
+  const integ = new Int32Array((W+1)*(H+1));
+  const pts = [];
+  for(let y=0;y<H;y++){
+    let rowOff=(y+1)*(W+1);
+    let prevRow=y*(W+1);
+    for(let x=0;x<W;x++){
+      const inside = data[(y*W+x)*4] < 128 ? 1 : 0;     // canal R; negro = dentro
+      integ[rowOff+x+1] = inside + integ[rowOff+x] + integ[prevRow+x+1] - integ[prevRow+x];
+      if(inside && (x&1)===0 && (y&1)===0) pts.push(x,y);
+    }
+  }
+  maskInteg = integ; insidePts = Int32Array.from(pts);
+}
+function rectInside(x0,y0,x1,y1){
+  if(x0<0||y0<0||x1>=W||y1>=H) return false;
+  const s = maskInteg[(y1)*(W+1)+x1] - maskInteg[(y0)*(W+1)+x1]
+          - maskInteg[(y1)*(W+1)+x0] + maskInteg[(y0)*(W+1)+x0];
+  return s === (x1-x0)*(y1-y0);
+}
+
+// ============================ Ocupación =====================================
+const CC = 4, GW = (W/CC|0)+2, GH = (H/CC|0)+2;
+let occ = new Uint8Array(GW*GH);
+function occReset(){ occ = new Uint8Array(GW*GH); }
+function occOverlap(x0,y0,x1,y1){
+  const gx0=x0/CC|0, gx1=x1/CC|0, gy0=y0/CC|0, gy1=y1/CC|0;
+  for(let gy=gy0;gy<=gy1;gy++){ const r=gy*GW; for(let gx=gx0;gx<=gx1;gx++) if(occ[r+gx]) return true; }
+  return false;
+}
+function occMark(x0,y0,x1,y1){
+  const gx0=x0/CC|0, gx1=x1/CC|0, gy0=y0/CC|0, gy1=y1/CC|0;
+  for(let gy=gy0;gy<=gy1;gy++){ const r=gy*GW; for(let gx=gx0;gx<=gx1;gx++) occ[r+gx]=1; }
+}
+
+// ============================ Métricas de glifo =============================
+let glyphCache = new Map();
+function setMeasureFont(family){ measCtx.font = `10px "${family}"`; } // base, se reescala
+function glyphMetrics(size, ch, family){
+  const key = size+"|"+ch;
+  let g = glyphCache.get(key);
+  if(g) return g;
+  measCtx.font = `${size}px "${family}"`;
+  const m = measCtx.measureText(ch);
+  g = { adv:m.width,
+        left:m.actualBoundingBoxLeft, right:m.actualBoundingBoxRight,
+        ascent:m.actualBoundingBoxAscent, descent:m.actualBoundingBoxDescent };
+  glyphCache.set(key,g);
+  return g;
+}
+
+// ============================ Disposición curva =============================
+function layout(name, base, x0, y0, a0, A, jitter, rnd, family){
+  const chars = Array.from(name);
+  const sizes = chars.map(()=> Math.max(6, Math.round(base*(1 + (rnd()*2-1)*jitter))));
+  const spacing = Math.max(1, base*0.05);
+  const advs = chars.map((ch,i)=> glyphMetrics(sizes[i], ch, family).adv);
+  let L = spacing*(chars.length-1); for(const a of advs) L+=a;
+  if(L < 1) return null;
+  const k = A / L;
+  const sin0 = Math.sin(a0), cos0 = Math.cos(a0);
+  const glyphs=[], boxes=[];
+  let t=0;
+  for(let i=0;i<chars.length;i++){
+    const ch=chars[i];
+    let px,py,ang;
+    if(Math.abs(k)<1e-6){ px=x0+t*cos0; py=y0+t*sin0; ang=a0; }
+    else { ang=a0+k*t; px=x0+(Math.sin(ang)-sin0)/k; py=y0-(Math.cos(ang)-cos0)/k; }
+    if(ch!==" "){
+      const g = glyphMetrics(sizes[i], ch, family);
+      const il=-g.left, ir=g.right, itop=-g.ascent, ibot=g.descent;
+      const ca=Math.cos(ang), sa=Math.sin(ang);
+      let minx=1e9,miny=1e9,maxx=-1e9,maxy=-1e9;
+      const cs=[[il,itop],[ir,itop],[ir,ibot],[il,ibot]];
+      for(const [cx,cy] of cs){
+        const X=px+cx*ca-cy*sa, Y=py+cx*sa+cy*ca;
+        if(X<minx)minx=X; if(X>maxx)maxx=X; if(Y<miny)miny=Y; if(Y>maxy)maxy=Y;
+      }
+      const bx0=Math.floor(minx), by0=Math.floor(miny), bx1=Math.ceil(maxx), by1=Math.ceil(maxy);
+      if(bx0<0||by0<0||bx1>=W||by1>=H) return null;
+      glyphs.push({ch, size:sizes[i], x:px, y:py, deg:ang*180/Math.PI});
+      boxes.push([bx0,by0,bx1,by1]);
+    }
+    t += advs[i] + spacing;
+  }
+  return {glyphs, boxes};
+}
+
+// ============================ Empaquetado ===================================
+function pack(opts){
+  const { seed, family, curve, dens, jitter } = opts;
+  const rnd = mulberry32(seed>>>0);
+  occReset(); glyphCache = new Map();
+  setMeasureFont(family);
+
+  const c = curve/100, d = dens/100, jit = 0.05 + 0.45*(jitter/100);
+  const straightProb = 1 - 0.8*c;
+  const Amax = 1.0*c;
+  const vertProb = 0.06 + 0.30*c;
+  const hRange = 0.12 + 0.30*c;
+  const CLAMP = 1.92;                          // ~110°, evita texto boca abajo
+
+  const baseStart = 62;
+  const baseMin   = Math.round(14 - 7*d);              // más densidad => letras más pequeñas
+  const CAP       = 4 + Math.round(10*d);
+
+  const placed=[]; const success={}; NAMES.forEach(n=>success[n]=0);
+  const NP = insidePts.length/2;
+
+  function orientation(){
+    let a0 = (rnd()<vertProb) ? (rnd()<0.5?Math.PI/2:-Math.PI/2)+(rnd()*2-1)*0.45
+                              : (rnd()*2-1)*hRange;
+    if(a0> CLAMP) a0=CLAMP; if(a0<-CLAMP) a0=-CLAMP;
+    return a0;
+  }
+  function tryPlace(name, base, attempts){
+    for(let k=0;k<attempts;k++){
+      const a0 = orientation();
+      let A = (rnd()<straightProb) ? 0 : (rnd()*2-1)*Amax;
+      if(a0+A> CLAMP) A=CLAMP-a0; if(a0+A<-CLAMP) A=-CLAMP-a0;
+      const pi = (rnd()*NP)|0;
+      const x0 = insidePts[pi*2] + (rnd()*2-1)*30;
+      const y0 = insidePts[pi*2+1] + (rnd()*2-1)*30;
+      const res = layout(name, base, x0, y0, a0, A, jit, rnd, family);
+      if(!res) continue;
+      let ok=true;
+      for(const b of res.boxes){ if(!rectInside(b[0],b[1],b[2],b[3])||occOverlap(b[0],b[1],b[2],b[3])){ ok=false; break; } }
+      if(ok){
+        for(const b of res.boxes) occMark(b[0],b[1],b[2],b[3]);
+        for(const g of res.glyphs) placed.push(g);
+        success[name]++; return true;
+      }
+    }
+    return false;
+  }
+
+  // Pasada 1: cada nombre al menos una vez
+  const order = NAMES.slice();
+  for(let i=order.length-1;i>0;i--){ const j=(rnd()*(i+1))|0; [order[i],order[j]]=[order[j],order[i]]; }
+  const sizesSeq = [baseStart, baseStart*0.8, baseStart*0.62, baseStart*0.48, baseStart*0.37, baseMin].map(Math.round);
+  for(const name of order){
+    for(const b of sizesSeq){ if(tryPlace(name, b, 220)) break; }
+  }
+  // Pasada 2: barridos por tamaños decrecientes (denso y acotado en tiempo)
+  const schedule=[]; for(let s=baseStart; s>=baseMin; s-=Math.max(2,Math.round(s*0.13))) schedule.push(s);
+  for(const size of schedule){
+    let progressed=true, sweeps=0;
+    while(progressed && sweeps<4){
+      progressed=false; sweeps++;
+      const avail=NAMES.filter(n=>success[n]<CAP).sort((a,b)=>success[a]-success[b]);
+      for(const name of avail){ if(tryPlace(name, size, size>26?55:130)) progressed=true; }
+    }
+  }
+
+  let mn=Infinity,mx=0; for(const n of NAMES){ if(success[n]<mn)mn=success[n]; if(success[n]>mx)mx=success[n]; }
+  return { glyphs:placed, count:Object.values(success).reduce((a,b)=>a+b,0), min:mn, max:mx };
+}
+
+// ============================ Render SVG / Canvas ===========================
+function svgString(placed, family){
+  const esc = s => s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`
+        + `<rect width="${W}" height="${H}" fill="#ffffff"/>`
+        + `<g fill="#000000" font-family="${esc(family)}">`;
+  for(const g of placed.glyphs){
+    s += `<text transform="translate(${g.x.toFixed(2)},${g.y.toFixed(2)}) rotate(${g.deg.toFixed(2)})" `
+       + `font-size="${g.size}" xml:space="preserve">${esc(g.ch)}</text>`;
+  }
+  return s + `</g></svg>`;
+}
+function drawCanvas(ctx, placed, family, scale){
+  ctx.save();
+  ctx.scale(scale, scale);
+  ctx.fillStyle="#fff"; ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#000"; ctx.textBaseline="alphabetic"; ctx.textAlign="left";
+  for(const g of placed.glyphs){
+    ctx.save();
+    ctx.translate(g.x, g.y); ctx.rotate(g.deg*Math.PI/180);
+    ctx.font = `${g.size}px "${family}"`;
+    ctx.fillText(g.ch, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+// ============================ Flujo principal ===============================
+function showSVG(placed, family){
+  $("stage").innerHTML = svgString(placed, family);
+}
+async function rebuildMask(){            // la máscara depende de la fuente del número
+  await ensureFont(currentDigitFont);
+  buildMask($("bigText").value || "26");
+}
+async function regenerate(seed){
+  busy(true);
+  await new Promise(r=>setTimeout(r,15));      // deja pintar el overlay
+  await ensureFont(currentFont);
+  lastSeed = (seed!==undefined) ? seed : (Math.floor(Math.random()*1e9));
+  const opts = { seed:lastSeed, family:currentFont,
+                 curve:+$("curve").value, dens:+$("dens").value, jitter:+$("jit").value };
+  const res = pack(opts);
+  lastPlaced = res;
+  showSVG(res, currentFont);
+  $("statNames").textContent = res.count + " nombres · cada uno " + res.min + "–" + res.max + "×";
+  $("statSeed").textContent = "semilla " + lastSeed + " · " + currentFont;
+  busy(false);
+}
+
+// ----- carga de fuentes (Google Fonts a demanda) -----
+function ensureFont(family){
+  return new Promise(resolve=>{
+    const id = "gf-"+family.replace(/[^a-z0-9]/gi,"");
+    if(!document.getElementById(id)){
+      const l=document.createElement("link"); l.id=id; l.rel="stylesheet";
+      l.href="https://fonts.googleapis.com/css2?family="+encodeURIComponent(family).replace(/%20/g,"+")+"&display=swap";
+      document.head.appendChild(l);
+    }
+    let done=false; const finish=()=>{ if(!done){done=true; resolve();} };
+    try{ document.fonts.load(`32px "${family}"`).then(()=>document.fonts.ready).then(finish); }catch(e){ finish(); }
+    setTimeout(finish, 2500);                   // por si la red tarda
+  });
+}
+
+// ============================ Descargas =====================================
+function download(blob, name){
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+function dlSVG(){ download(new Blob([svgString(lastPlaced,currentFont)],{type:"image/svg+xml"}), "camiseta.svg"); }
+function rasterize(scale){
+  const c=document.createElement("canvas"); c.width=W*scale; c.height=H*scale;
+  drawCanvas(c.getContext("2d"), lastPlaced, currentFont, scale);
+  return c;
+}
+function dlPNG(){ rasterize(2.4).toBlob(b=>download(b,"camiseta.png"),"image/png"); }
+function dlPDF(){ window.print(); }   // el usuario elige "Guardar como PDF" (vectorial)
+
+// ============================ Favoritas (localStorage) ======================
+const FKEY="camiseta_favs_v1";
+function loadFavs(){ try{ return JSON.parse(localStorage.getItem(FKEY)||"[]"); }catch(e){ return []; } }
+function saveFavs(f){ localStorage.setItem(FKEY, JSON.stringify(f)); }
+function thumb(){ const c=rasterize(0.22); return c.toDataURL("image/png"); }
+function addFav(){
+  const favs=loadFavs();
+  favs.unshift({ id:Date.now(), seed:lastSeed, font:currentFont, digit:currentDigitFont, big:$("bigText").value,
+    curve:+$("curve").value, dens:+$("dens").value, jit:+$("jit").value,
+    names:NAMES.slice(), thumb:thumb() });
+  saveFavs(favs.slice(0,40)); renderFavs();
+}
+async function applyFav(f){
+  $("bigText").value=f.big; $("curve").value=f.curve; $("dens").value=f.dens; $("jit").value=f.jit;
+  $("curveVal").textContent=f.curve; $("densVal").textContent=f.dens; $("jitVal").textContent=f.jit;
+  NAMES=f.names.slice(); $("names").value=NAMES.join("\n");
+  currentFont=f.font; currentDigitFont=f.digit||currentDigitFont;
+  syncFontSelect(); syncDigitSelect();
+  await rebuildMask(); regenerate(f.seed);
+}
+function renderFavs(){
+  const favs=loadFavs(), box=$("favs"); box.innerHTML="";
+  $("favsEmpty").style.display = favs.length? "none":"block";
+  for(const f of favs){
+    const d=document.createElement("div"); d.className="fav"; d.title=f.font;
+    d.innerHTML=`<img src="${f.thumb}"><div class="del">×</div>`;
+    d.querySelector("img").onclick=()=>applyFav(f);
+    d.querySelector(".del").onclick=(e)=>{ e.stopPropagation(); saveFavs(loadFavs().filter(x=>x.id!==f.id)); renderFavs(); };
+    box.appendChild(d);
+  }
+}
+
+// ============================ UI ============================================
+function syncFontSelect(){
+  const sel=$("fontSel");
+  if(![...sel.options].some(o=>o.value===currentFont)){
+    const o=document.createElement("option"); o.value=currentFont; o.textContent=currentFont+" (personalizada)"; sel.appendChild(o);
+  }
+  sel.value=currentFont;
+}
+function syncDigitSelect(){
+  const sel=$("digitSel");
+  if(![...sel.options].some(o=>o.value===currentDigitFont)){
+    const o=document.createElement("option"); o.value=currentDigitFont; o.textContent=currentDigitFont+" (personalizada)"; sel.appendChild(o);
+  }
+  sel.value=currentDigitFont;
+}
+function initUI(){
+  const sel=$("fontSel");
+  for(const f of FONTS){ const o=document.createElement("option"); o.value=f; o.textContent=f; sel.appendChild(o); }
+  sel.value=currentFont;
+  const dsel=$("digitSel");
+  for(const f of DIGIT_FONTS){ const o=document.createElement("option"); o.value=f; o.textContent=f; dsel.appendChild(o); }
+  dsel.value=currentDigitFont;
+  $("names").value = NAMES.join("\n");
+
+  sel.onchange = ()=>{ currentFont=sel.value; regenerate(lastSeed); };
+  $("loadFont").onclick = ()=>{ const v=$("customFont").value.trim(); if(!v) return;
+    currentFont=v; syncFontSelect(); regenerate(lastSeed); };
+  dsel.onchange = async ()=>{ currentDigitFont=dsel.value; await rebuildMask(); regenerate(lastSeed); };
+  $("loadDigit").onclick = async ()=>{ const v=$("customDigit").value.trim(); if(!v) return;
+    currentDigitFont=v; syncDigitSelect(); await rebuildMask(); regenerate(lastSeed); };
+  $("regen").onclick = ()=> regenerate();
+  $("save").onclick  = addFav;
+  $("dlSvg").onclick = dlSVG; $("dlPng").onclick = dlPNG; $("dlPdf").onclick = dlPDF;
+
+  const live = (id, valId, rebuild)=>{ const el=$(id); el.oninput=()=>{ $(valId).textContent=el.value; };
+    el.onchange=()=>{ regenerate(lastSeed); }; };
+  live("curve","curveVal"); live("dens","densVal"); live("jit","jitVal");
+
+  $("bigText").onchange = async ()=>{ await rebuildMask(); regenerate(lastSeed); };
+  $("applyNames").onclick = ()=>{ NAMES = $("names").value.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+    if(NAMES.length) regenerate(lastSeed); };
+
+  renderFavs();
+}
+
+// ============================ Arranque ======================================
+(async function(){
+  initUI();
+  await Promise.all([ensureFont(currentFont), ensureFont(currentDigitFont)]);
+  buildMask("26");
+  await regenerate(20260526);     // semilla inicial fija
+})();
+</script>
+</body>
+</html>
