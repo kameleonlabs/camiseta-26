@@ -75,10 +75,14 @@
     <div class="group">
       <label>Curvatura / locura de los nombres: <span id="curveVal">35</span></label>
       <input id="curve" type="range" min="0" max="100" value="35">
-      <label>Densidad de relleno: <span id="densVal">80</span></label>
+      <label>Relleno (tamaño de los nombres): <span id="densVal">80</span></label>
       <input id="dens" type="range" min="0" max="100" value="80">
       <label>Variación de tamaño por letra: <span id="jitVal">25</span></label>
       <input id="jit" type="range" min="0" max="100" value="25">
+      <label style="margin-top:12px;display:flex;align-items:center;gap:7px;color:var(--ink)">
+        <input id="repeat" type="checkbox" checked> Repetir nombres para rellenar
+      </label>
+      <div class="hint">Activado: los nombres se repiten (repartidos) hasta llenar el número. Desactivado: cada nombre 1 sola vez (queda más vacío).</div>
     </div>
 
     <div class="group">
@@ -160,6 +164,7 @@ function busy(on){ overlay.classList.toggle("on", on); }
 
 // ============================ Máscara del dígito ============================
 let maskInteg = null, maskW = W, maskH = H, insidePts = null;
+let insideCell = null, insideCellCount = 0;   // rejilla dentro del número (para medir % de relleno)
 const measCanvas = document.createElement("canvas");
 const measCtx = measCanvas.getContext("2d");
 
@@ -195,6 +200,12 @@ function buildMask(bigText){
     }
   }
   maskInteg = integ; insidePts = Int32Array.from(pts);
+  // celdas de la rejilla que caen dentro del número (para el % de relleno)
+  insideCell = new Uint8Array(GW*GH); insideCellCount = 0;
+  for(let gy=0; gy<GH; gy++) for(let gx=0; gx<GW; gx++){
+    const cx=gx*CC+(CC>>1), cy=gy*CC+(CC>>1);
+    if(cx<W-1 && cy<H-1 && rectInside(cx,cy,cx+1,cy+1)){ insideCell[gy*GW+gx]=1; insideCellCount++; }
+  }
 }
 function rectInside(x0,y0,x1,y1){
   if(x0<0||y0<0||x1>=W||y1>=H) return false;
@@ -204,7 +215,7 @@ function rectInside(x0,y0,x1,y1){
 }
 
 // ============================ Ocupación =====================================
-const CC = 3, GW = (W/CC|0)+2, GH = (H/CC|0)+2;
+const CC = 2, GW = (W/CC|0)+2, GH = (H/CC|0)+2;
 let occ = new Uint8Array(GW*GH);
 function occReset(){ occ = new Uint8Array(GW*GH); }
 function occOverlap(x0,y0,x1,y1){
@@ -272,7 +283,7 @@ function layout(name, base, x0, y0, a0, A, jitter, rnd, family){
 
 // ============================ Empaquetado ===================================
 function pack(opts){
-  const { seed, family, curve, dens, jitter } = opts;
+  const { seed, family, curve, dens, jitter, repeat } = opts;
   const rnd = mulberry32(seed>>>0);
   occReset(); glyphCache = new Map();
   setMeasureFont(family);
@@ -285,16 +296,17 @@ function pack(opts){
   const hRange = 0.12 + 0.30*c;
   const CLAMP = 1.92;                          // ~110°, evita texto boca abajo
 
-  // Tamaños: rango COMPRIMIDO (poca diferencia entre nombres) que baja con la densidad.
-  const baseMax  = Math.round(40 - 8*d);               // grande: 40..32
-  const baseMid  = Math.round(baseMax*0.70);
-  const baseMin  = Math.round(baseMax*0.50);           // diferencia moderada (~2x)
-  const gapFloor = Math.round(13 - 8*d);               // 13..5: a más densidad, rellenos diminutos
-  const CAP      = 8 + Math.round(40*d);               // a tope: hasta ~48 repeticiones para no dejar huecos
-
-  const placed=[]; const success={}; NAMES.forEach(n=>success[n]=0);
-  const NP = insidePts.length/2;
-
+  const placed=[];
+  const count={}; NAMES.forEach(n=>count[n]=0);
+  let SAMPLE = insidePts, SAMPLE_N = insidePts.length/2;
+  function refreshEmpty(){              // muestrear solo donde aún queda hueco libre
+    const out=[];
+    for(let i=0;i<insidePts.length;i+=2){
+      const x=insidePts[i], y=insidePts[i+1];
+      if(!occ[(y/CC|0)*GW + (x/CC|0)]) out.push(x,y);
+    }
+    SAMPLE = out.length ? out : insidePts; SAMPLE_N = SAMPLE.length/2;
+  }
   function orientation(){
     let a0 = (rnd()<vertProb) ? (rnd()<0.5?Math.PI/2:-Math.PI/2)+(rnd()*2-1)*0.45
                               : (rnd()*2-1)*hRange;
@@ -307,9 +319,9 @@ function pack(opts){
       const a0 = orientation();
       let A = (rnd()<straightProb) ? 0 : (rnd()*2-1)*Amax;
       if(a0+A> CLAMP) A=CLAMP-a0; if(a0+A<-CLAMP) A=-CLAMP-a0;
-      const pi = (rnd()*NP)|0;
-      const x0 = insidePts[pi*2] + (rnd()*2-1)*30;
-      const y0 = insidePts[pi*2+1] + (rnd()*2-1)*30;
+      const pi = (rnd()*SAMPLE_N)|0;
+      const x0 = SAMPLE[pi*2]   + (rnd()*2-1)*22;
+      const y0 = SAMPLE[pi*2+1] + (rnd()*2-1)*22;
       const res = layout(name, base, x0, y0, a0, A, jit, rnd, family);
       if(!res) continue;
       let ok=true;
@@ -317,39 +329,48 @@ function pack(opts){
       if(ok){
         for(const b of res.boxes) occMark(b[0],b[1],b[2],b[3]);
         for(const g of res.glyphs) placed.push(g);
-        success[name]++; return true;
+        count[name]++; return true;
       }
     }
     return false;
   }
 
-  // Pasada 1: cada nombre al menos una vez
-  const order = NAMES.slice();
-  for(let i=order.length-1;i>0;i--){ const j=(rnd()*(i+1))|0; [order[i],order[j]]=[order[j],order[i]]; }
-  const sizesSeq = [baseMax, baseMid, baseMin];
-  for(const name of order){
-    for(const b of sizesSeq){ if(tryPlace(name, b, 200)) break; }
-  }
-  // Barridos densos: a cada tamaño se repite hasta que ya no entra nada más (o se agota el tiempo).
-  function sweepFill(sizes, attBig, attSmall, maxSweeps){
-    for(const size of sizes){
-      if(Date.now()>DEADLINE) return;
-      let progressed=true, sweeps=0;
-      while(progressed && sweeps<maxSweeps){
-        progressed=false; sweeps++;
-        const avail=NAMES.filter(n=>success[n]<CAP).sort((a,b)=>success[a]-success[b]);
-        for(const name of avail){ if(tryPlace(name, size, size>24?attBig:attSmall)) progressed=true; }
+  // Nombres más largos primero (necesitan más sitio cuando el número aún está vacío).
+  const order = NAMES.slice().sort((a,b)=> Array.from(b).length - Array.from(a).length);
+
+  if(repeat){
+    // REPETIR: rondas equilibradas. Cada ronda intenta colocar TODOS una vez más,
+    // al mayor tamaño que quepa; el techo baja cada ronda. Así se reparte parejo
+    // y se rellena hasta la densidad objetivo (o agotar el tiempo).
+    const minSize = Math.round(12 - 9*d);              // 12..3: a más densidad, rellenos diminutos
+    let curMax = 46, progressed = true;
+    while(progressed && Date.now()<DEADLINE){
+      progressed=false; refreshEmpty();
+      for(const name of order){
+        for(let size=curMax; size>=minSize; size=Math.max(size-2,Math.floor(size*0.82))){
+          if(tryPlace(name, size, size>30?110:260)){ progressed=true; break; }
+        }
       }
+      curMax = Math.max(minSize, Math.floor(curMax*0.82));
+    }
+  } else {
+    // SIN REPETIR: cada nombre UNA vez, lo más grande que quepa (densidad = tamaño objetivo).
+    const targetMax = Math.round(34 + 52*d);           // 34..86
+    for(const name of order){
+      refreshEmpty();
+      let done=false;
+      for(let size=targetMax; size>=5 && !done; size=Math.max(size-2, Math.floor(size*0.85))){
+        if(tryPlace(name, size, size>40?350:700)) done=true;
+      }
+      if(!done){ refreshEmpty(); for(let size=5; size>=3 && !done; size--){ if(tryPlace(name,size,2500)) done=true; } }
     }
   }
-  const mainSizes=[]; for(let s=baseMax; s>=baseMin; s-=2) mainSizes.push(s);
-  sweepFill(mainSizes, 60, 130, 5);
-  // Relleno de huecos: tamaños pequeños SOLO donde aún quede sitio (tapa los huecos hasta ~5px).
-  const gapSizes=[]; for(let s=baseMin-1; s>=gapFloor; s--) gapSizes.push(s);
-  sweepFill(gapSizes, 0, Math.round(260+360*d), 6);
 
-  let mn=Infinity,mx=0; for(const n of NAMES){ if(success[n]<mn)mn=success[n]; if(success[n]>mx)mx=success[n]; }
-  return { glyphs:placed, count:Object.values(success).reduce((a,b)=>a+b,0), min:mn, max:mx };
+  const placedNames = Object.values(count).filter(v=>v>0).length;
+  const total = Object.values(count).reduce((a,b)=>a+b,0);
+  let cov=0; for(let i=0;i<insideCell.length;i++) if(insideCell[i] && occ[i]) cov++;
+  const coverage = insideCellCount ? cov/insideCellCount : 0;
+  return { glyphs:placed, total, placedNames, coverage, repeat, missing: NAMES.length - placedNames };
 }
 
 // ============================ Render SVG / Canvas ===========================
@@ -393,11 +414,15 @@ async function regenerate(seed){
   await ensureFont(currentFont);
   lastSeed = (seed!==undefined) ? seed : (Math.floor(Math.random()*1e9));
   const opts = { seed:lastSeed, family:currentFont,
-                 curve:+$("curve").value, dens:+$("dens").value, jitter:+$("jit").value };
+                 curve:+$("curve").value, dens:+$("dens").value, jitter:+$("jit").value,
+                 repeat:$("repeat").checked };
   const res = pack(opts);
   lastPlaced = res;
   showSVG(res, currentFont);
-  $("statNames").textContent = res.count + " nombres · cada uno " + res.min + "–" + res.max + "×";
+  const avg = res.placedNames ? (res.total/res.placedNames) : 0;
+  $("statNames").textContent = res.placedNames + "/" + NAMES.length + " nombres · relleno " + Math.round(res.coverage*100) + "%"
+                             + (res.repeat ? " · ×" + avg.toFixed(1) + " de media" : " · 1 vez c/u")
+                             + (res.missing ? " · ⚠️ faltan " + res.missing : "");
   $("statSeed").textContent = "semilla " + lastSeed + " · " + currentFont;
   busy(false);
 }
@@ -439,13 +464,14 @@ function thumb(){ const c=rasterize(0.22); return c.toDataURL("image/png"); }
 function addFav(){
   const favs=loadFavs();
   favs.unshift({ id:Date.now(), seed:lastSeed, font:currentFont, digit:currentDigitFont, big:$("bigText").value,
-    curve:+$("curve").value, dens:+$("dens").value, jit:+$("jit").value,
+    curve:+$("curve").value, dens:+$("dens").value, jit:+$("jit").value, repeat:$("repeat").checked,
     names:NAMES.slice(), thumb:thumb() });
   saveFavs(favs.slice(0,40)); renderFavs();
 }
 async function applyFav(f){
   $("bigText").value=f.big; $("curve").value=f.curve; $("dens").value=f.dens; $("jit").value=f.jit;
   $("curveVal").textContent=f.curve; $("densVal").textContent=f.dens; $("jitVal").textContent=f.jit;
+  $("repeat").checked = (f.repeat!==false);
   NAMES=f.names.slice(); $("names").value=NAMES.join("\n");
   currentFont=f.font; currentDigitFont=f.digit||currentDigitFont;
   syncFontSelect(); syncDigitSelect();
@@ -506,6 +532,7 @@ function initUI(){
   const live = (id, valId, rebuild)=>{ const el=$(id); el.oninput=()=>{ $(valId).textContent=el.value; };
     el.onchange=()=>{ regenerate(lastSeed); }; };
   live("curve","curveVal"); live("dens","densVal"); live("jit","jitVal");
+  $("repeat").onchange = ()=> regenerate(lastSeed);
 
   $("bigText").onchange = async ()=>{ await rebuildMask(); regenerate(lastSeed); };
   $("applyNames").onclick = ()=>{ NAMES = $("names").value.split(/\n+/).map(s=>s.trim()).filter(Boolean);
