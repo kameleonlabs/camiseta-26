@@ -290,7 +290,7 @@ function pack(opts){
   occReset(); glyphCache = new Map();
   setMeasureFont(family);
 
-  const t0 = Date.now(), DEADLINE = t0 + 4500;   // presupuesto de tiempo (rellena lo máximo sin colgarse)
+  const t0 = Date.now(); let DEADLINE = t0 + 4500;   // presupuesto de tiempo (rellena lo máximo sin colgarse)
   const c = curve/100, d = dens/100, jit = 0.05 + 0.45*(jitter/100);
   const straightProb = 1 - 0.8*c;
   const Amax = 1.0*c;
@@ -384,6 +384,17 @@ function pack(opts){
         if(tryPlace(name, size, size>40?350:700)) done=true;
       }
       if(!done){ refreshEmpty(); for(let size=lo-1; size>=3 && !done; size--){ if(tryPlace(name,size,2500)) done=true; } }
+    }
+  }
+
+  // GARANTÍA (no opcional): TODOS los nombres deben aparecer al menos una vez.
+  // El flag "repetir" solo añade copias extra; esto asegura la presencia mínima.
+  let missingList = order.filter(n=>count[n]===0);
+  if(missingList.length){
+    DEADLINE = Date.now() + 2000;                 // tiempo extra reservado solo para garantizar presencia
+    for(const name of missingList){
+      refreshEmpty();
+      for(let size=26; size>=3; size--){ if(tryPlace(name, size, 1800)) break; }
     }
   }
 
