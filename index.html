@@ -7,12 +7,12 @@
 <style>
   :root{ --bg:#11151c; --panel:#1b2330; --ink:#e8edf4; --muted:#93a0b4; --accent:#36c08a; --accent2:#3b82f6; }
   *{box-sizing:border-box}
-  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);
     font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;}
-  .app{display:grid;grid-template-columns:320px 1fr;height:100vh;}
-  .side{background:var(--panel);padding:16px;overflow:auto;border-right:1px solid #000;}
-  .main{display:flex;flex-direction:column;min-width:0;}
-  .stage{flex:1;display:flex;align-items:center;justify-content:center;padding:18px;overflow:auto;}
+  .app{display:grid;grid-template-columns:320px 1fr;height:100vh;overflow:hidden;}
+  .side{background:var(--panel);padding:16px;overflow:auto;border-right:1px solid #000;min-height:0;}
+  .main{display:flex;flex-direction:column;min-width:0;min-height:0;}
+  .stage{flex:1;display:flex;align-items:center;justify-content:center;padding:12px;overflow:hidden;min-height:0;min-width:0;}
   .stage svg{background:#fff;max-width:100%;max-height:100%;box-shadow:0 8px 40px rgba(0,0,0,.5);border-radius:6px;}
   h1{font-size:16px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
   h1 small{font-weight:400;color:var(--muted);font-size:11px}
@@ -73,12 +73,12 @@
     </div>
 
     <div class="group">
-      <label>Curvatura / locura de los nombres: <span id="curveVal">45</span></label>
-      <input id="curve" type="range" min="0" max="100" value="45">
-      <label>Densidad de relleno: <span id="densVal">60</span></label>
-      <input id="dens" type="range" min="0" max="100" value="60">
-      <label>Variación de tamaño por letra: <span id="jitVal">40</span></label>
-      <input id="jit" type="range" min="0" max="100" value="40">
+      <label>Curvatura / locura de los nombres: <span id="curveVal">35</span></label>
+      <input id="curve" type="range" min="0" max="100" value="35">
+      <label>Densidad de relleno: <span id="densVal">80</span></label>
+      <input id="dens" type="range" min="0" max="100" value="80">
+      <label>Variación de tamaño por letra: <span id="jitVal">25</span></label>
+      <input id="jit" type="range" min="0" max="100" value="25">
     </div>
 
     <div class="group">
@@ -86,6 +86,7 @@
         <button class="btn-accent" id="regen">🎲 Regenerar</button>
         <button class="btn-blue" id="save">♥ Guardar</button>
       </div>
+      <button class="btn-dark" id="randFont" style="width:100%;margin-top:8px">🔤 Probar fuentes al azar</button>
       <div class="row" style="margin-top:8px">
         <button class="btn-dark" id="dlSvg">SVG</button>
         <button class="btn-dark" id="dlPng">PNG</button>
@@ -203,7 +204,7 @@ function rectInside(x0,y0,x1,y1){
 }
 
 // ============================ Ocupación =====================================
-const CC = 4, GW = (W/CC|0)+2, GH = (H/CC|0)+2;
+const CC = 3, GW = (W/CC|0)+2, GH = (H/CC|0)+2;
 let occ = new Uint8Array(GW*GH);
 function occReset(){ occ = new Uint8Array(GW*GH); }
 function occOverlap(x0,y0,x1,y1){
@@ -236,7 +237,7 @@ function glyphMetrics(size, ch, family){
 function layout(name, base, x0, y0, a0, A, jitter, rnd, family){
   const chars = Array.from(name);
   const sizes = chars.map(()=> Math.max(6, Math.round(base*(1 + (rnd()*2-1)*jitter))));
-  const spacing = Math.max(1, base*0.05);
+  const spacing = Math.max(0.5, base*0.03);
   const advs = chars.map((ch,i)=> glyphMetrics(sizes[i], ch, family).adv);
   let L = spacing*(chars.length-1); for(const a of advs) L+=a;
   if(L < 1) return null;
@@ -283,9 +284,12 @@ function pack(opts){
   const hRange = 0.12 + 0.30*c;
   const CLAMP = 1.92;                          // ~110°, evita texto boca abajo
 
-  const baseStart = 62;
-  const baseMin   = Math.round(14 - 7*d);              // más densidad => letras más pequeñas
-  const CAP       = 4 + Math.round(10*d);
+  // Tamaños: rango COMPRIMIDO (poca diferencia entre nombres) que baja con la densidad.
+  const baseMax  = Math.round(42 - 10*d);              // grande: 42..32
+  const baseMid  = Math.round(baseMax*0.68);
+  const baseMin  = Math.round(baseMax*0.48);           // diferencia moderada (~2x)
+  const fillMin  = Math.max(8, Math.round(baseMax*0.30)); // mini-rellenos para tapar huecos
+  const CAP      = 8 + Math.round(16*d);
 
   const placed=[]; const success={}; NAMES.forEach(n=>success[n]=0);
   const NP = insidePts.length/2;
@@ -320,20 +324,26 @@ function pack(opts){
   // Pasada 1: cada nombre al menos una vez
   const order = NAMES.slice();
   for(let i=order.length-1;i>0;i--){ const j=(rnd()*(i+1))|0; [order[i],order[j]]=[order[j],order[i]]; }
-  const sizesSeq = [baseStart, baseStart*0.8, baseStart*0.62, baseStart*0.48, baseStart*0.37, baseMin].map(Math.round);
+  const sizesSeq = [baseMax, baseMid, baseMin, fillMin];
   for(const name of order){
-    for(const b of sizesSeq){ if(tryPlace(name, b, 220)) break; }
+    for(const b of sizesSeq){ if(tryPlace(name, b, 200)) break; }
   }
-  // Pasada 2: barridos por tamaños decrecientes (denso y acotado en tiempo)
-  const schedule=[]; for(let s=baseStart; s>=baseMin; s-=Math.max(2,Math.round(s*0.13))) schedule.push(s);
-  for(const size of schedule){
-    let progressed=true, sweeps=0;
-    while(progressed && sweeps<4){
-      progressed=false; sweeps++;
-      const avail=NAMES.filter(n=>success[n]<CAP).sort((a,b)=>success[a]-success[b]);
-      for(const name of avail){ if(tryPlace(name, size, size>26?55:130)) progressed=true; }
+  // Barridos densos: a cada tamaño se repite hasta que ya no entra nada más.
+  function sweepFill(sizes, attBig, attSmall, maxSweeps){
+    for(const size of sizes){
+      let progressed=true, sweeps=0;
+      while(progressed && sweeps<maxSweeps){
+        progressed=false; sweeps++;
+        const avail=NAMES.filter(n=>success[n]<CAP).sort((a,b)=>success[a]-success[b]);
+        for(const name of avail){ if(tryPlace(name, size, size>24?attBig:attSmall)) progressed=true; }
+      }
     }
   }
+  const mainSizes=[]; for(let s=baseMax; s>=baseMin; s-=2) mainSizes.push(s);
+  sweepFill(mainSizes, 60, 130, 5);
+  // Relleno de huecos: tamaños pequeños SOLO donde aún quede sitio (tapa los huecos).
+  const gapSizes=[]; for(let s=baseMin-1; s>=fillMin; s-=2) gapSizes.push(s);
+  sweepFill(gapSizes, 0, 240, 4);
 
   let mn=Infinity,mx=0; for(const n of NAMES){ if(success[n]<mn)mn=success[n]; if(success[n]>mx)mx=success[n]; }
   return { glyphs:placed, count:Object.values(success).reduce((a,b)=>a+b,0), min:mn, max:mx };
@@ -481,6 +491,12 @@ function initUI(){
   $("loadDigit").onclick = async ()=>{ const v=$("customDigit").value.trim(); if(!v) return;
     currentDigitFont=v; syncDigitSelect(); await rebuildMask(); regenerate(lastSeed); };
   $("regen").onclick = ()=> regenerate();
+  $("randFont").onclick = async ()=>{
+    currentFont = FONTS[(Math.random()*FONTS.length)|0];
+    currentDigitFont = DIGIT_FONTS[(Math.random()*DIGIT_FONTS.length)|0];
+    syncFontSelect(); syncDigitSelect();
+    await rebuildMask(); regenerate(lastSeed);
+  };
   $("save").onclick  = addFav;
   $("dlSvg").onclick = dlSVG; $("dlPng").onclick = dlPNG; $("dlPdf").onclick = dlPDF;
 
